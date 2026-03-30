@@ -26,6 +26,7 @@ class Scheduler:
         scheduled_seqs = []
         num_seqs = 0
         num_batched_tokens = 0
+        # 优先执行先来的prefill，不够了还会驱逐running队列最后一条的
         while self.waiting and num_seqs < self.max_num_seqs:
             seq = self.waiting[0]
             if num_batched_tokens + len(seq) > self.max_num_batched_tokens or not self.block_manager.can_allocate(seq):
@@ -39,7 +40,8 @@ class Scheduler:
             scheduled_seqs.append(seq)
         if scheduled_seqs:
             return scheduled_seqs, True
-
+        
+        # waiting队列空了（没有需要prefill的seq），才会执行decode
         # decode
         while self.running and num_seqs < self.max_num_seqs:
             seq = self.running.popleft()
@@ -65,6 +67,7 @@ class Scheduler:
     def postprocess(self, seqs: list[Sequence], token_ids: list[int]) -> list[bool]:
         for seq, token_id in zip(seqs, token_ids):
             seq.append_token(token_id)
+            # 序列输出完毕，就释放资源，从running队列出去
             if (not seq.ignore_eos and token_id == self.eos) or seq.num_completion_tokens == seq.max_tokens:
                 seq.status = SequenceStatus.FINISHED
                 self.block_manager.deallocate(seq)
