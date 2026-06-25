@@ -17,7 +17,9 @@ class VocabParallelEmbedding(nn.Module):
         self.tp_rank = dist.get_rank()
         self.tp_size = dist.get_world_size()
         assert num_embeddings % self.tp_size == 0
+
         self.num_embeddings = num_embeddings
+        # embedding分区
         self.num_embeddings_per_partition = self.num_embeddings // self.tp_size
         self.vocab_start_idx = self.num_embeddings_per_partition * self.tp_rank
         self.vocab_end_idx = self.vocab_start_idx + self.num_embeddings_per_partition
@@ -35,9 +37,12 @@ class VocabParallelEmbedding(nn.Module):
         if self.tp_size > 1:
             mask = (x >= self.vocab_start_idx) & (x < self.vocab_end_idx)
             x = mask * (x - self.vocab_start_idx)
-        y = F.embedding(x, self.weight)
+        # 每个gpu存储1/n的embedding，但每个gpu都用完整的x查自己的局部权重
+        y = F.embedding(x, self.weight) # （seq_len, hidden_dim）
         if self.tp_size > 1:
-            y = mask.unsqueeze(1) * y
+            # mask:len(seq_len) （seq_len, 1） 广播
+            y = mask.unsqueeze(1) * y # mask，在嵌入范围的是True，其他地方清零
+            # 多个rank的embedding结果进行all reduce拿到所有的embedding
             dist.all_reduce(y)
         return y
 
@@ -56,7 +61,7 @@ class ParallelLMHead(VocabParallelEmbedding):
     def forward(self, x: torch.Tensor):
         context = get_context()
         if context.is_prefill:
-            last_indices = context.cu_seqlens_q[1:] - 1
+            last_indices = context.cu_seqlens_q[1:] - 1 # 只取每个序列的最后位置
             x = x[last_indices].contiguous()
         logits = F.linear(x, self.weight)
         if self.tp_size > 1:

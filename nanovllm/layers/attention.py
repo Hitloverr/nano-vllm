@@ -6,7 +6,7 @@ import triton.language as tl
 from flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
 from nanovllm.utils.context import get_context
 
-
+# triton内核，高效存储kv cache
 @triton.jit
 def store_kvcache_kernel(
     key_ptr,
@@ -52,7 +52,7 @@ class Attention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
-        self.scale = scale
+        self.scale = scale # 1/sqrt(head_dim   )
         self.num_kv_heads = num_kv_heads
         self.k_cache = self.v_cache = torch.tensor([])
 

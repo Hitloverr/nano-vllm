@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-
+# RMSNorm，少了一个求均数的过程
 class RMSNorm(nn.Module):
 
     def __init__(
@@ -21,7 +21,7 @@ class RMSNorm(nn.Module):
         orig_dtype = x.dtype
         x = x.float()
         var = x.pow(2).mean(dim=-1, keepdim=True)
-        x.mul_(torch.rsqrt(var + self.eps))
+        x.mul_(torch.rsqrt(var + self.eps))# x / sqrt(var + eps)  * weight
         x = x.to(orig_dtype).mul_(self.weight)
         return x
 
